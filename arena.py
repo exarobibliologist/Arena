@@ -13,11 +13,9 @@ class Gladiator:
         self.is_alive = True
 
     def display_stats(self, index):
-        # Format the gladiator string to fit cleanly in a column
-        if not self.is_alive:
-            return f"[{index:2}] {self.name:12}: *** DEAD ***"
-            
-        def_marker = " (D)" if self.is_defending else ""
+        # We no longer replace the string with "DEAD"
+        # We just format it normally (HP will naturally be 0)
+        def_marker = " (D)" if self.is_defending and self.is_alive else ""
         return f"[{index:2}] {self.name:12}: HP {self.hp:3} Def {self.def_stat:2} Atk {self.atk:2}{def_marker}"
 
     def take_damage(self, amount, on_the_fly_defend=False):
@@ -33,6 +31,7 @@ class Gladiator:
         if self.hp <= 0:
             self.hp = 0
             self.is_alive = False
+            self.is_defending = False
             
         return actual_damage
 
@@ -41,57 +40,95 @@ class ArenaGame:
         self.pot = 1000
         self.messages = []
         
-        # Initialize 20 gladiators (Player is index 0)
         self.gladiators = [Gladiator("Player", is_player=True)]
         for i in range(2, 21):
             self.gladiators.append(Gladiator(f"Gladiator {i}"))
+            
+        # Enable ANSI colors on Windows just in case
+        if os.name == 'nt':
+            os.system('color')
 
     def get_alive_gladiators(self):
         return [g for g in self.gladiators if g.is_alive]
 
     def log_and_render(self, msg, delay=0.6):
-        """Adds a message to the log, limits it to 5, redraws the screen, and pauses."""
         if msg:
             self.messages.append(msg)
             if len(self.messages) > 5:
                 self.messages.pop(0)
                 
-        # Clear the terminal screen (works on Windows/DOS and Unix)
         os.system('cls' if os.name == 'nt' else 'clear')
         
         # --- DRAW HEADER ---
-        print("=" * 80)
-        print(f"THE ARENA - Current Pot: {self.pot} Gold".center(80))
-        print("=" * 80)
+        print("=" * 100)
+        print(f"THE ARENA - Current Pot: {self.pot} Gold".center(100))
+        print("=" * 100)
         
-        # --- DRAW GLADIATORS (2 Columns) ---
-        # Odds on left (1-10), Evens on right (11-20)
+        # --- DRAW GLADIATORS (With ANSI Gray for Dead) ---
         for i in range(10):
             left_glad = self.gladiators[i]
             right_glad = self.gladiators[i + 10]
             
-            left_str = left_glad.display_stats(i + 1)
-            right_str = right_glad.display_stats(i + 11)
+            # Format the raw strings first to ensure padding doesn't count invisible ANSI codes
+            left_str_raw = f"{left_glad.display_stats(i + 1):<47}"
+            right_str_raw = right_glad.display_stats(i + 11)
             
-            print(f"{left_str:<39}| {right_str}")
+            # Wrap in dark gray (\033[90m) if dead, then reset (\033[0m)
+            if not left_glad.is_alive:
+                left_str_raw = f"\033[90m{left_str_raw}\033[0m"
+            if not right_glad.is_alive:
+                right_str_raw = f"\033[90m{right_str_raw}\033[0m"
+                
+            print(f"{left_str_raw} |   {right_str_raw}")
             
         # --- DRAW MESSAGE LOG ---
-        print("=" * 80)
-        print("BATTLE LOG".center(80))
-        print("-" * 80)
+        print("=" * 100)
+        print("BATTLE LOG".center(100))
+        print("-" * 100)
         
-        # Pad with empty lines if there are fewer than 5 messages
         for i in range(5):
             if i < len(self.messages):
                 print(self.messages[i])
             else:
                 print("")
                 
-        print("=" * 80)
+        print("=" * 100)
         
-        # Pause to let the player read the action
         if delay > 0:
             time.sleep(delay)
+
+    def loot_gladiator(self, survivor, deceased):
+        # Calculate a slight stat boost based on the fallen enemy's gear
+        atk_boost = max(1, deceased.atk // 4)
+        def_boost = max(1, deceased.def_stat // 4)
+        
+        if survivor.is_player:
+            self.log_and_render(f"You stand victorious over {deceased.name}!", delay=0)
+            print(f"1. Take their Weapon (+{atk_boost} Atk)")
+            print(f"2. Take their Shield (+{def_boost} Def)")
+            print("3. Leave their gear in the dust")
+            
+            while True:
+                choice = input("Scavenge (1-3): ").strip()
+                if choice == '1':
+                    survivor.atk += atk_boost
+                    self.log_and_render(f"You took the weapon! Your Atk is now {survivor.atk}.")
+                    break
+                elif choice == '2':
+                    survivor.def_stat += def_boost
+                    self.log_and_render(f"You took the shield! Your Def is now {survivor.def_stat}.")
+                    break
+                elif choice == '3':
+                    self.log_and_render("You respectfully leave the gear untouched.")
+                    break
+        else:
+            # AI randomly decides what to loot
+            if random.random() > 0.5:
+                survivor.atk += atk_boost
+                self.log_and_render(f"{survivor.name} scavenges a weapon from {deceased.name} (+{atk_boost} Atk).")
+            else:
+                survivor.def_stat += def_boost
+                self.log_and_render(f"{survivor.name} scavenges a shield from {deceased.name} (+{def_boost} Def).")
 
     def player_turn(self, player):
         self.log_and_render("It is your turn!", delay=0)
@@ -174,10 +211,16 @@ class ArenaGame:
                 dmg_out = attacker.take_damage(defender.atk, on_the_fly_defend=False)
                 self.log_and_render(f"{defender.name} hits back for {dmg_out} damage!")
 
+        # Process deaths and looting
         if not defender.is_alive:
             self.log_and_render(f"*** {defender.name} HAS FALLEN! ***", delay=1.0)
+            if attacker.is_alive:
+                self.loot_gladiator(attacker, defender)
+                
         if not attacker.is_alive:
             self.log_and_render(f"*** {attacker.name} HAS FALLEN! ***", delay=1.0)
+            if defender.is_alive:
+                self.loot_gladiator(defender, attacker)
 
     def player_reaction(self, attacker):
         self.log_and_render(f"!!! {attacker.name} is attacking you! !!!", delay=0)
@@ -192,7 +235,6 @@ class ArenaGame:
                 return 'defend'
 
     def play(self):
-        # Initial draw
         self.log_and_render("Welcome to the ARENA. The fight begins!", delay=2.0)
         
         round_num = 1
