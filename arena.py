@@ -7,16 +7,23 @@ class Gladiator:
         self.name = name
         self.is_player = is_player
         self.hp = 100
-        self.atk = random.randint(15, 30)
-        self.def_stat = random.randint(10, 20)
-        self.gold = 0
         
+        # Permanent Base Stats
+        self.base_atk = random.randint(10, 15)
+        self.base_def_stat = random.randint(10, 15)
+        
+        # Active Combat Stats (Can be temporarily boosted by looting)
+        self.atk = self.base_atk
+        self.def_stat = self.base_def_stat
+        
+        # Gold is now a high score/bounty mechanic
+        self.gold = 10 
         self.is_defending = False
         self.is_alive = True
 
     def display_stats(self, index):
         def_marker = " (D)" if self.is_defending and self.is_alive else ""
-        return f"[{index:2}] {self.name:12}: HP {self.hp:3} Def {self.def_stat:2} Atk {self.atk:2}{def_marker}"
+        return f"[{index:2}] {self.name:12}: HP {self.hp:3} Atk {self.atk:2} Def {self.def_stat:2} ${self.gold:3}{def_marker}"
 
     def take_damage(self, amount, on_the_fly_defend=False):
         mitigation = 0
@@ -39,11 +46,13 @@ class ArenaGame:
     def __init__(self):
         self.pot = 10
         self.messages = []
+        self.first_blood_victim = None
         
-        # Initialize gladiators once so they persist across multiple matches
+        # Initialize gladiators. All AI are just named "Gladiator".
         self.gladiators = [Gladiator("Player", is_player=True)]
-        for i in range(2, 21):
-            self.gladiators.append(Gladiator(f"Gladiator {i}"))
+        self.player = self.gladiators[0]
+        for _ in range(19):
+            self.gladiators.append(Gladiator("Gladiator"))
             
         if os.name == 'nt':
             os.system('color')
@@ -51,15 +60,33 @@ class ArenaGame:
     def get_alive_gladiators(self):
         return [g for g in self.gladiators if g.is_alive]
 
+    def sort_gladiators(self):
+        # Sorts living to the top, dead to the bottom. Player takes priority at the very top.
+        self.gladiators.sort(key=lambda g: (g.is_alive, g.is_player), reverse=True)
+
+    def get_idx_name(self, g):
+        """Helper function to dynamically get the gladiator's current roster number for the log."""
+        if g in self.gladiators:
+            idx = self.gladiators.index(g) + 1
+            if g.name == "Gladiator":
+                return f"[{idx}]"
+            return f"[{idx}] {g.name}"
+        return g.name
+
     def reset_arena(self):
         self.pot = 10
         self.messages = []
+        self.first_blood_victim = None
         for g in self.gladiators:
             g.hp = 100
+            # Strip scavenged gear, reset to permanent upgraded stats
+            g.atk = g.base_atk
+            g.def_stat = g.base_def_stat
             g.is_alive = True
             g.is_defending = False
+        self.sort_gladiators()
 
-    def log_and_render(self, msg, delay=0.6):
+    def log_and_render(self, msg, delay=0.3):
         if msg:
             self.messages.append(msg)
             if len(self.messages) > 5:
@@ -67,27 +94,35 @@ class ArenaGame:
                 
         os.system('cls' if os.name == 'nt' else 'clear')
         
-        print("=" * 100)
-        print(f"THE ARENA - Current Pot: {self.pot} Gold".center(100))
-        print("=" * 100)
+        # Widened to 110 to accommodate the gold display
+        print("=" * 110)
+        print(f"THE ARENA - Current Pot: {self.pot} Gold".center(110))
+        print("=" * 110)
         
-        for i in range(10):
+        # Dynamic Row Calculation based on shrinking roster
+        num_glads = len(self.gladiators)
+        num_rows = (num_glads + 1) // 2
+        
+        for i in range(num_rows):
             left_glad = self.gladiators[i]
-            right_glad = self.gladiators[i + 10]
-            
-            left_str_raw = f"{left_glad.display_stats(i + 1):<47}"
-            right_str_raw = right_glad.display_stats(i + 11)
-            
+            left_str_raw = f"{left_glad.display_stats(i + 1):<51}"
             if not left_glad.is_alive:
                 left_str_raw = f"\033[90m{left_str_raw}\033[0m"
-            if not right_glad.is_alive:
-                right_str_raw = f"\033[90m{right_str_raw}\033[0m"
                 
-            print(f"{left_str_raw} |   {right_str_raw}")
+            right_idx = i + num_rows
+            if right_idx < num_glads:
+                right_glad = self.gladiators[right_idx]
+                right_str_raw = right_glad.display_stats(right_idx + 1)
+                if not right_glad.is_alive:
+                    right_str_raw = f"\033[90m{right_str_raw}\033[0m"
+                print(f"{left_str_raw} |   {right_str_raw}")
+            else:
+                # If odd number of gladiators, the last row only has a left column
+                print(f"{left_str_raw} |")
             
-        print("=" * 100)
-        print("BATTLE LOG".center(100))
-        print("-" * 100)
+        print("=" * 110)
+        print("BATTLE LOG".center(110))
+        print("-" * 110)
         
         for i in range(5):
             if i < len(self.messages):
@@ -95,30 +130,33 @@ class ArenaGame:
             else:
                 print("")
                 
-        print("=" * 100)
+        print("=" * 110)
         
         if delay > 0:
             time.sleep(delay)
 
     def loot_gladiator(self, survivor, deceased):
-        atk_boost = max(1, deceased.atk // 4)
-        def_boost = max(1, deceased.def_stat // 4)
+        atk_boost = max(1, deceased.atk // 3)
+        def_boost = max(1, deceased.def_stat // 3)
+        
+        surv_name = self.get_idx_name(survivor)
+        dec_name = self.get_idx_name(deceased)
         
         if survivor.is_player:
-            self.log_and_render(f"You stand victorious over {deceased.name}!", delay=0)
-            print(f"1. Take their Weapon (+{atk_boost} Atk)")
-            print(f"2. Take their Shield (+{def_boost} Def)")
+            self.log_and_render(f"You stand victorious over a fallen {dec_name}!", delay=0)
+            print(f"1. Take their Weapon (+{atk_boost} Temp Atk)")
+            print(f"2. Take their Shield (+{def_boost} Temp Def)")
             print("3. Leave their gear in the dust")
             
             while True:
                 choice = input("Scavenge (1-3): ").strip()
                 if choice == '1':
                     survivor.atk += atk_boost
-                    self.log_and_render(f"You took the weapon! Your Atk is now {survivor.atk}.")
+                    self.log_and_render(f"You took the weapon! Your Temp Atk is now {survivor.atk}.")
                     break
                 elif choice == '2':
                     survivor.def_stat += def_boost
-                    self.log_and_render(f"You took the shield! Your Def is now {survivor.def_stat}.")
+                    self.log_and_render(f"You took the shield! Your Temp Def is now {survivor.def_stat}.")
                     break
                 elif choice == '3':
                     self.log_and_render("You respectfully leave the gear untouched.")
@@ -126,10 +164,10 @@ class ArenaGame:
         else:
             if random.random() > 0.5:
                 survivor.atk += atk_boost
-                self.log_and_render(f"{survivor.name} scavenges a weapon from {deceased.name} (+{atk_boost} Atk).")
+                self.log_and_render(f"{surv_name} scavenges a weapon (+{atk_boost} Temp Atk).")
             else:
                 survivor.def_stat += def_boost
-                self.log_and_render(f"{survivor.name} scavenges a shield from {deceased.name} (+{def_boost} Def).")
+                self.log_and_render(f"{surv_name} scavenges a shield (+{def_boost} Temp Def).")
 
     def player_turn(self, player):
         self.log_and_render("It is your turn!", delay=0)
@@ -147,17 +185,17 @@ class ArenaGame:
                 self.log_and_render("You raise your shield! (Defense maximized)")
                 break
             elif choice == '3':
-                # Increase pot by exactly 1% (minimum 1 gold)
                 cheer = max(1, int(self.pot * 0.01))
                 self.pot += cheer
                 self.log_and_render(f"You pump up the crowd! The pot increases by {cheer}!")
                 break
 
     def player_attack_logic(self, player):
+        num_glads = len(self.gladiators)
         while True:
             try:
-                target_idx = int(input("Select target by number (1-20): ")) - 1
-                if target_idx < 0 or target_idx >= 20:
+                target_idx = int(input(f"Select target by number (1-{num_glads}): ")) - 1
+                if target_idx < 0 or target_idx >= num_glads:
                     print("Invalid number.")
                     continue
                 
@@ -176,6 +214,7 @@ class ArenaGame:
 
     def ai_turn(self, ai):
         action = random.choices(['attack', 'defend', 'gesture'], weights=[60, 20, 20])[0]
+        ai_name = self.get_idx_name(ai)
         
         if action == 'attack':
             alive = self.get_alive_gladiators()
@@ -185,14 +224,17 @@ class ArenaGame:
                 self.execute_attack(ai, target)
         elif action == 'defend':
             ai.is_defending = True
-            self.log_and_render(f"{ai.name} takes a defensive stance.")
+            self.log_and_render(f"{ai_name} takes a defensive stance.")
         elif action == 'gesture':
             cheer = max(1, int(self.pot * 0.01))
             self.pot += cheer
-            self.log_and_render(f"{ai.name} gestures to the crowd. Pot +{cheer}.")
+            self.log_and_render(f"{ai_name} gestures to the crowd. Pot +{cheer}.")
 
     def execute_attack(self, attacker, defender):
-        self.log_and_render(f"{attacker.name} attacks {defender.name}!")
+        att_name = self.get_idx_name(attacker)
+        def_name = self.get_idx_name(defender)
+        
+        self.log_and_render(f"{att_name} attacks {def_name}!")
         
         if defender.is_player:
             reaction = self.player_reaction(attacker)
@@ -200,49 +242,62 @@ class ArenaGame:
             reaction = random.choice(['counter', 'defend'])
             
         if reaction == 'defend':
-            self.log_and_render(f"{defender.name} tries to block the blow on the fly!")
+            self.log_and_render(f"{def_name} tries to block the blow on the fly!")
             dmg = defender.take_damage(attacker.atk, on_the_fly_defend=True)
-            self.log_and_render(f"{attacker.name} hits for {dmg} damage!")
+            self.log_and_render(f"{att_name} hits for {dmg} damage!")
             
-            # Reward for Total Defense
             if dmg == 0:
-                self.pot += 20
-                self.log_and_render(f"FLAWLESS DEFENSE! The crowd throws 20 gold into the pot!")
+                self.pot += 10
+                self.log_and_render(f"FLAWLESS DEFENSE! The crowd throws 10 gold into the pot!")
             
         elif reaction == 'counter':
-            self.log_and_render(f"{defender.name} chooses to counterattack!")
+            self.log_and_render(f"{def_name} chooses to counterattack!")
             dmg_in = defender.take_damage(attacker.atk, on_the_fly_defend=False)
-            self.log_and_render(f"{attacker.name} hits for {dmg_in} damage!")
+            self.log_and_render(f"{att_name} hits for {dmg_in} damage!")
             
-            # Reward for Total Defense during a counter if they had main-turn defense up
             if dmg_in == 0 and defender.is_defending:
-                self.pot += 20
-                self.log_and_render(f"FLAWLESS DEFENSE! The crowd throws 20 gold into the pot!")
+                self.pot += 10
+                self.log_and_render(f"FLAWLESS DEFENSE! The crowd throws 10 gold into the pot!")
             
             if defender.is_alive:
                 dmg_out = attacker.take_damage(defender.atk, on_the_fly_defend=False)
-                self.log_and_render(f"{defender.name} hits back for {dmg_out} damage!")
+                self.log_and_render(f"{def_name} hits back for {dmg_out} damage!")
                 
-                # Attacker gets total defense reward if they blocked the counter perfectly
                 if dmg_out == 0 and attacker.is_defending:
-                    self.pot += 20
-                    self.log_and_render(f"FLAWLESS DEFENSE! The crowd throws 20 gold into the pot!")
+                    self.pot += 10
+                    self.log_and_render(f"FLAWLESS DEFENSE! The crowd throws 10 gold into the pot!")
 
-        # Process deaths, looting, and reward for Total Victory
+        # Process deaths, stealing gold, and looting
         if not defender.is_alive:
-            self.pot += 50
-            self.log_and_render(f"*** {defender.name} HAS FALLEN! The crowd cheers (+50 Pot) ***", delay=1.0)
+            self.pot += 25
+            self.log_and_render(f"*** {def_name} HAS FALLEN! The crowd cheers (+25 Pot) ***", delay=1.0)
+            if self.first_blood_victim is None and not defender.is_player:
+                self.first_blood_victim = defender
             if attacker.is_alive:
+                stolen_gold = defender.gold // 2
+                attacker.gold += stolen_gold
+                defender.gold -= stolen_gold
+                self.log_and_render(f"{att_name} claims {stolen_gold} gold from {def_name}!", delay=0.5)
                 self.loot_gladiator(attacker, defender)
                 
         if not attacker.is_alive:
-            self.pot += 50
-            self.log_and_render(f"*** {attacker.name} HAS FALLEN! The crowd cheers (+50 Pot) ***", delay=1.0)
+            self.pot += 25
+            self.log_and_render(f"*** {att_name} HAS FALLEN! The crowd cheers (+25 Pot) ***", delay=1.0)
+            if self.first_blood_victim is None and not attacker.is_player:
+                self.first_blood_victim = attacker
             if defender.is_alive:
+                stolen_gold = attacker.gold // 2
+                defender.gold += stolen_gold
+                attacker.gold -= stolen_gold
+                self.log_and_render(f"{def_name} claims {stolen_gold} gold from {att_name}!", delay=0.5)
                 self.loot_gladiator(defender, attacker)
 
+        # Sort the roster immediately after someone dies to dynamically update the list
+        self.sort_gladiators()
+
     def player_reaction(self, attacker):
-        self.log_and_render(f"!!! {attacker.name} is attacking you! !!!", delay=0)
+        att_name = self.get_idx_name(attacker)
+        self.log_and_render(f"!!! An enemy {att_name} is attacking you! !!!", delay=0)
         print("1. Counterattack (Take normal damage, hit back)")
         print("2. Defend on the fly (Reduce incoming damage by 50% Def)")
         
@@ -253,96 +308,37 @@ class ArenaGame:
             elif choice == '2':
                 return 'defend'
 
-    def calculate_max_upgrades(self, current_stat, available_gold):
-        count = 0
-        temp_stat = current_stat
-        temp_gold = available_gold
+    def preparation_phase(self, winner):
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print("=" * 60)
+        print("PREPARATION PHASE".center(60))
+        print("=" * 60)
+        print(f"The Champion {winner.name} hones their skills!")
+        print("Base Attack increases by 1!")
+        print("Base Defense increases by 1!")
+        print("=" * 60)
         
-        while temp_gold >= max(1, temp_stat // 2):
-            temp_gold -= max(1, temp_stat // 2)
-            temp_stat += 1
-            count += 1
-        return count
-
-    def preparation_phase(self):
-        player = self.gladiators[0]
+        # Apply the winner's stat bump
+        winner.base_atk += 1
+        winner.base_def_stat += 1
         
-        while True:
-            os.system('cls' if os.name == 'nt' else 'clear')
-            print("=" * 50)
-            print("PREPARATION PHASE".center(50))
-            print("=" * 50)
-            print(f"Current Gold: {player.gold}")
-            print("-" * 50)
-            
-            atk_cost = max(1, player.atk // 2)
-            def_cost = max(1, player.def_stat // 2)
-            
-            max_atk_upgrades = self.calculate_max_upgrades(player.atk, player.gold)
-            max_def_upgrades = self.calculate_max_upgrades(player.def_stat, player.gold)
-            
-            print(f"1. Upgrade Attack (Current: {player.atk})")
-            print(f"   Cost: {atk_cost} Gold | Can afford: {max_atk_upgrades} more upgrades")
-            print(f"2. Upgrade Defense (Current: {player.def_stat})")
-            print(f"   Cost: {def_cost} Gold | Can afford: {max_def_upgrades} more upgrades")
-            print("3. Enter the next Arena battle")
-            print("=" * 50)
-            
-            choice = input("Select an option (1-3): ").strip()
-            
-            if choice == '1':
-                if player.gold >= atk_cost:
-                    player.gold -= atk_cost
-                    player.atk += 1
-                else:
-                    input("Not enough gold! Press Enter to continue...")
-            elif choice == '2':
-                if player.gold >= def_cost:
-                    player.gold -= def_cost
-                    player.def_stat += 1
-                else:
-                    input("Not enough gold! Press Enter to continue...")
-            elif choice == '3':
-                break
-
-    def ai_preparation_phase(self):
-        for ai in self.gladiators[1:]:
-            while True:
-                atk_cost = max(1, ai.atk // 2)
-                def_cost = max(1, ai.def_stat // 2)
-                
-                can_buy_atk = ai.gold >= atk_cost
-                can_buy_def = ai.gold >= def_cost
-                
-                if not can_buy_atk and not can_buy_def:
-                    break 
-                
-                choices = []
-                if can_buy_atk: choices.append('atk')
-                if can_buy_def: choices.append('def')
-                
-                pick = random.choice(choices)
-                if pick == 'atk':
-                    ai.gold -= atk_cost
-                    ai.atk += 1
-                elif pick == 'def':
-                    ai.gold -= def_cost
-                    ai.def_stat += 1
+        input("\nPress Enter to return to the Arena...")
 
     def play(self):
         while True:
             self.reset_arena()
-            self.log_and_render("Welcome to the ARENA. The fight begins!", delay=2.0)
+            self.log_and_render(f"Welcome to the ARENA. {len(self.gladiators)} combatants remain!", delay=2.0)
             
             round_num = 1
             while len(self.get_alive_gladiators()) > 1:
-                if not self.gladiators[0].is_alive:
+                if not self.player.is_alive:
                     self.log_and_render("You have fallen in the Arena...", delay=0)
                     break
                     
                 self.log_and_render(f"--- ROUND {round_num} BEGINS ---")
                 
-                for gladiator in self.get_alive_gladiators():
+                # Copy the list for iteration so dynamic sorting doesn't skip turns
+                for gladiator in list(self.get_alive_gladiators()):
                     if not gladiator.is_alive:
                         continue
                         
@@ -359,22 +355,20 @@ class ArenaGame:
             os.system('cls' if os.name == 'nt' else 'clear')
             print("=" * 60)
             
+            winner = None
             if alive:
                 winner = alive[0]
-                winner_share = int(self.pot * 0.70)
-                loser_share = (self.pot - winner_share) // 19
-                
                 print(f"THE ARENA FALLS SILENT. {winner.name} IS THE VICTOR!".center(60))
                 print("=" * 60)
-                print(f"Total Pot: {self.pot} Gold")
-                print("-" * 60)
-                print(f"{winner.name} receives the Champion's Share: {winner_share} Gold!")
-                print(f"All other gladiators receive a Consolation Share: {loser_share} Gold.")
+                print(f"{winner.name} takes the Grand Pot: {self.pot} Gold!")
                 
-                winner.gold += winner_share
-                for g in self.gladiators:
-                    if g != winner:
-                        g.gold += loser_share
+                # Winner takes the entire pot
+                winner.gold += self.pot
+                        
+                if self.first_blood_victim and self.first_blood_victim in self.gladiators:
+                    print("-" * 60)
+                    print(f"First Blood Penalty: A fallen Gladiator is permanently removed from the games!")
+                    self.gladiators.remove(self.first_blood_victim)
             else:
                 print("NO COMBATANTS SURVIVED. THE ARENA CLAIMS ALL.".center(60))
                 print("=" * 60)
@@ -386,12 +380,12 @@ class ArenaGame:
                 if q_c in ['Q', 'C']:
                     break
             
-            if q_c == 'Q':
-                print("\nThanks for playing Arena!")
+            if q_c == 'Q' or not self.player.is_alive:
+                print(f"\nThanks for playing Arena! Your Final Score (Gold): {self.player.gold}")
                 break
             else:
-                self.ai_preparation_phase()
-                self.preparation_phase()
+                if winner:
+                    self.preparation_phase(winner)
 
 if __name__ == "__main__":
     game = ArenaGame()
