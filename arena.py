@@ -1,8 +1,11 @@
 import random
 import time
 import os
+import sys
 import json
 import re
+import subprocess
+import shutil
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
@@ -68,9 +71,9 @@ class ArenaGame:
     
     def __init__(self) -> None:
         self.pot: int = 10
-        self.messages: List[str] = []
         self.first_blood_victim: Optional[Gladiator] = None
         self.round_num: int = 1
+        self.log_file: str = "arena_battle_log.txt"
         
         self.gladiators: List[Gladiator] = [Gladiator("Player", is_player=True)]
         self.player: Gladiator = self.gladiators[0]
@@ -80,10 +83,29 @@ class ArenaGame:
             
         if os.name == 'nt':
             os.system('color')
+            
+        with open(self.log_file, "w", encoding="utf-8") as f:
+            f.write(f"{Colors.MAGENTA}--- BATTLE LOG INITIALIZED ---{Colors.RESET}\n")
 
     def _clear_screen(self) -> None:
         """Helper method to clear the terminal screen."""
         os.system('cls' if os.name == 'nt' else 'clear')
+
+    def launch_log_window(self) -> None:
+        """Spawns the secondary log viewer process in a new terminal."""
+        script_path = os.path.abspath(__file__)
+        if os.name == 'nt':
+            subprocess.Popen(['start', 'cmd', '/c', sys.executable, script_path, '--log-viewer'], shell=True)
+        else:
+            terminals = ['x-terminal-emulator', 'gnome-terminal', 'xterm', 'konsole']
+            for term in terminals:
+                if shutil.which(term):
+                    if term in ['gnome-terminal', 'x-terminal-emulator']:
+                        subprocess.Popen([term, '--', sys.executable, script_path, '--log-viewer'])
+                    else:
+                        subprocess.Popen([term, '-e', f'{sys.executable} {script_path} --log-viewer'])
+                    return
+            print("Warning: Could not launch log window automatically. Run 'python arena.py --log-viewer'.")
 
     def save_game(self, filename: str = "arena_save.json") -> None:
         """Serializes the current game state to a JSON file."""
@@ -169,7 +191,6 @@ class ArenaGame:
     def reset_arena(self) -> None:
         """Resets arena state for a new round of combat."""
         self.pot = 10
-        self.messages = []
         self.first_blood_victim = None
         for g in self.gladiators:
             g.hp = 100
@@ -181,13 +202,15 @@ class ArenaGame:
             g.def_mult = 1.0
         self.sort_gladiators()
 
-    def log_and_render(self, msg: Optional[str], delay: float = 0) -> None:
-        """Logs a message to the battle log and renders the UI frame."""
-        if msg:
-            self.messages.append(msg)
-            if len(self.messages) > 15:
-                self.messages.pop(0)
-                
+    def log_event(self, msg: str, delay: float = 0) -> None:
+        """Writes a message to the external battle log."""
+        with open(self.log_file, 'a', encoding='utf-8') as f:
+            f.write(msg + '\n')
+        if delay > 0:
+            time.sleep(delay)
+
+    def render_arena(self) -> None:
+        """Renders the gladiator stats in the primary window."""
         self._clear_screen()
         
         print("=" * 110)
@@ -222,19 +245,8 @@ class ArenaGame:
                 print(f"{left_str_raw} ||")
             
         print("=" * 110)
-        print("BATTLE LOG".center(110))
-        print("-" * 110)
-        
-        for i in range(15):
-            if i < len(self.messages):
-                print(self.messages[i])
-            else:
-                print("")
-                
+        print("BATTLE LOG FORKED TO EXTERNAL WINDOW".center(110))
         print("=" * 110)
-        
-        if delay > 0:
-            time.sleep(delay)
 
     def loot_gladiator(self, survivor: Gladiator, deceased: Gladiator) -> None:
         """Processes gear upgrades when one gladiator defeats another."""
@@ -242,7 +254,8 @@ class ArenaGame:
         def_boost = max(1, deceased.def_stat // 4)
         
         if survivor.is_player:
-            self.log_and_render(f"You stand victorious over a fallen {deceased.name}!", delay=0)
+            self.render_arena()
+            print(f"{Colors.GREEN}You stand victorious over a fallen {deceased.name}!{Colors.RESET}")
             print(f"1. Take their Weapon (+{atk_boost} Temp Atk)")
             print(f"2. Take their Shield (+{def_boost} Temp Def)")
             print("3. Leave their gear in the dust")
@@ -251,14 +264,14 @@ class ArenaGame:
                 choice = input("Scavenge (1-3): ").strip()
                 if choice == '1':
                     survivor.atk += atk_boost
-                    self.log_and_render(f"You took the weapon! Your Temp Atk is now {survivor.atk}.")
+                    self.log_event(f"Player took the weapon! Temp Atk is now {survivor.atk}.")
                     break
                 elif choice == '2':
                     survivor.def_stat += def_boost
-                    self.log_and_render(f"You took the shield! Your Temp Def is now {survivor.def_stat}.")
+                    self.log_event(f"Player took the shield! Temp Def is now {survivor.def_stat}.")
                     break
                 elif choice == '3':
-                    self.log_and_render("You respectfully leave the gear untouched.")
+                    self.log_event("Player respectfully leaves the gear untouched.")
                     break
         else:
             if random.random() > 0.5:
@@ -269,7 +282,8 @@ class ArenaGame:
     def player_turn(self, player: Gladiator) -> Optional[str]:
         """Handles input and logic for the player's turn."""
         while True:
-            self.log_and_render(f"{Colors.MAGENTA}It is your turn!{Colors.RESET}", delay=0)
+            self.render_arena()
+            print(f"{Colors.MAGENTA}It is your turn!{Colors.RESET}")
             print("1. Attack (100% Atk / 50% Def until next turn)")
             print("2. Defend (100% Def / 50% Atk until next turn)")
             print("3. Gesture to Crowd (Increase Pot by 1%)")
@@ -287,7 +301,7 @@ class ArenaGame:
                 player.stance = Stance.DEFEND
                 player.atk_mult = 0.5
                 player.def_mult = 1.0
-                self.log_and_render("You take a defensive stance!")
+                self.log_event("Player takes a defensive stance!")
                 break
             elif choice == '3':
                 player.stance = Stance.GESTURE
@@ -295,22 +309,23 @@ class ArenaGame:
                 player.def_mult = 1.0
                 cheer = max(1, int(self.pot * 0.01))
                 self.pot += cheer
-                self.log_and_render(f"You pump up the crowd! The pot increases by {cheer}!")
+                self.log_event(f"Player pumps up the crowd! The pot increases by {cheer}!")
                 break
             elif choice == 'S':
                 self.save_game()
-                self.log_and_render(f"{Colors.GREEN}Game saved successfully!{Colors.RESET}", delay=0)
+                self.log_event("Game saved successfully.")
             elif choice == 'L':
                 if self.load_game():
-                    self.log_and_render(f"{Colors.GREEN}Game loaded successfully!{Colors.RESET}", delay=0)
+                    self.log_event("Game loaded successfully.")
                     return "LOADED"
                 else:
-                    self.log_and_render(f"{Colors.RED}No save file found!{Colors.RESET}", delay=0)
+                    print(f"{Colors.RED}No save file found!{Colors.RESET}")
         return None
 
     def player_attack_logic(self, player: Gladiator) -> None:
         num_glads = len(self.gladiators)
         while True:
+            self.render_arena()
             try:
                 target_idx = int(input(f"Select target by number (1-{num_glads}): ")) - 1
                 if target_idx < 0 or target_idx >= num_glads:
@@ -402,11 +417,7 @@ class ArenaGame:
         
         involves_player = attacker.is_player or defender.is_player
         
-        def c_log(msg: str, delay: float = 0) -> None:
-            if involves_player:
-                self.log_and_render(msg, delay)
-        
-        c_log(f"{att_name} attacks {def_name}!")
+        self.log_event(f"{att_name} attacks {def_name}!")
         
         # Base active stats for Attacker
         att_atk = attacker.atk * attacker.atk_mult
@@ -434,63 +445,64 @@ class ArenaGame:
                 reaction = random.choice(['counter', 'defend'])
         
         if reaction == 'counter':
-            c_log(f"{def_name} chooses to counterattack!")
+            self.log_event(f"{def_name} chooses to counterattack!")
             final_def_def = def_base_def * 0.75
             final_def_atk = def_base_atk * 1.50
         elif reaction == 'defend':
-            c_log(f"{def_name} blocks and strikes back!")
+            self.log_event(f"{def_name} blocks and strikes back!")
             final_def_def = def_base_def * 1.50
             final_def_atk = def_base_atk * 0.75
             
         # Step 1: Attacker hits Defender
         dmg_in = self._apply_damage(defender, att_atk - final_def_def)
             
-        c_log(f"{att_name} hits for {dmg_in} damage!")
+        self.log_event(f"{att_name} hits for {dmg_in} damage!", delay=0.1)
         
         if dmg_in == 0:
             self.pot += 2
-            c_log(f"{Colors.GREEN}FLAWLESS DEFENSE! The crowd throws 2 gold into the pot!{Colors.RESET}")
+            self.log_event(f"{Colors.GREEN}FLAWLESS DEFENSE! The crowd throws 2 gold into the pot!{Colors.RESET}")
             
         # Step 2: Defender strikes back (if they survive)
         if defender.is_alive:
             dmg_out = self._apply_damage(attacker, final_def_atk - att_def)
                 
-            c_log(f"{def_name} hits back for {dmg_out} damage!")
+            self.log_event(f"{def_name} hits back for {dmg_out} damage!", delay=0.1)
             
             if dmg_out == 0:
                 self.pot += 2
-                c_log(f"{Colors.GREEN}FLAWLESS DEFENSE! The crowd throws 2 gold into the pot!{Colors.RESET}")
+                self.log_event(f"{Colors.GREEN}FLAWLESS DEFENSE! The crowd throws 2 gold into the pot!{Colors.RESET}")
 
         # Process deaths, stealing gold, and looting
         if not defender.is_alive:
             self.pot += 25
-            c_log(f"{Colors.GREEN}*** {def_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}", delay=0)
+            self.log_event(f"{Colors.GREEN}*** {def_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}")
             if self.first_blood_victim is None and not defender.is_player:
                 self.first_blood_victim = defender
             if attacker.is_alive:
                 stolen_gold = defender.gold // 2
                 attacker.gold += stolen_gold
                 defender.gold -= stolen_gold
-                c_log(f"{att_name} claims {stolen_gold} gold from {def_name}!", delay=0)
+                self.log_event(f"{att_name} claims {stolen_gold} gold from {def_name}!")
                 self.loot_gladiator(attacker, defender)
                 
         if not attacker.is_alive:
             self.pot += 25
-            c_log(f"{Colors.GREEN}*** {att_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}", delay=0)
+            self.log_event(f"{Colors.GREEN}*** {att_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}")
             if self.first_blood_victim is None and not attacker.is_player:
                 self.first_blood_victim = attacker
             if defender.is_alive:
                 stolen_gold = attacker.gold // 2
                 defender.gold += stolen_gold
                 attacker.gold -= stolen_gold
-                c_log(f"{def_name} claims {stolen_gold} gold from {att_name}!", delay=0)
+                self.log_event(f"{def_name} claims {stolen_gold} gold from {att_name}!")
                 self.loot_gladiator(defender, attacker)
 
         self.sort_gladiators()
 
     def player_reaction(self, attacker: Gladiator) -> str:
+        self.render_arena()
         att_name = self.get_idx_name(attacker)
-        self.log_and_render(f"{Colors.RED}!!! An enemy {att_name} is attacking you! !!!{Colors.RESET}", delay=0)
+        print(f"{Colors.RED}!!! An enemy {att_name} is attacking you! !!!{Colors.RESET}")
         print("1. Counterattack (Take damage at -25% Def, hit back +50% Atk)")
         print("2. Defend (Take damage at +50% Def, hit back at -25% Atk)")
         
@@ -551,20 +563,21 @@ class ArenaGame:
 
     def play(self) -> None:
         """Main game loop handler."""
+        self.launch_log_window()
         while True:
             self.reset_arena()
             self.round_num = 1
-            self.log_and_render(f"Welcome to the ARENA. {len(self.gladiators)} combatants remain!", delay=0)
+            self.log_event(f"Welcome to the ARENA. {len(self.gladiators)} combatants remain!")
             
             player_fallen_msg_shown = False
             
             while len(self.get_alive_gladiators()) > 1:
                 if not self.player.is_alive and not player_fallen_msg_shown:
-                    self.log_and_render(f"{Colors.RED}You have fallen! The remaining gladiators finish the match...{Colors.RESET}", delay=5.0)
+                    self.log_event(f"{Colors.RED}You have fallen! The remaining gladiators finish the match...{Colors.RESET}")
                     player_fallen_msg_shown = True
                     
                 if self.player.is_alive:
-                    self.log_and_render(f"--- ROUND {self.round_num} BEGINS ---")
+                    self.log_event(f"\n--- ROUND {self.round_num} BEGINS ---")
                 
                 loaded_from_menu = False
                 
@@ -631,7 +644,33 @@ class ArenaGame:
                 if winner:
                     self.preparation_phase(winner)
 
+def run_log_viewer() -> None:
+    """Standalone loop to tail the battle log file."""
+    if os.name == 'nt':
+        os.system('color')
+    print(f"{Colors.YELLOW}--- EXTERNAL BATTLE LOG ---{Colors.RESET}")
+    print("Waiting for events...\n")
+    
+    log_file = "arena_battle_log.txt"
+    if not os.path.exists(log_file):
+        open(log_file, 'w').close()
+        
+    with open(log_file, 'r', encoding='utf-8') as f:
+        f.seek(0, 2)
+        while True:
+            line = f.readline()
+            if not line:
+                time.sleep(0.05)
+                continue
+            sys.stdout.write(line)
+            sys.stdout.flush()
 
 if __name__ == "__main__":
-    game = ArenaGame()
-    game.play()
+    if len(sys.argv) > 1 and sys.argv[1] == '--log-viewer':
+        try:
+            run_log_viewer()
+        except KeyboardInterrupt:
+            sys.exit(0)
+    else:
+        game = ArenaGame()
+        game.play()
