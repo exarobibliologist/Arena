@@ -2,6 +2,7 @@ import random
 import time
 import os
 import json
+import re
 
 class Colors:
     RED = '\033[31m'
@@ -13,15 +14,23 @@ class Colors:
 
 class Gladiator:
     def __init__(self, name, is_player=False):
-        self.name = name
         self.is_player = is_player
+        
+        # AI Personality Profile dictates their name
+        if self.is_player:
+            self.personality = "Player"
+            self.name = name
+        else:
+            self.personality = random.choice(["Assassin", "Slayer", "Tactician", "Berserker", "Survivor"])
+            self.name = self.personality
+
         self.hp = 100
         
         # Permanent Base Stats
         self.base_atk = random.randint(15, 20)
         self.base_def_stat = random.randint(15, 20)
         
-        # Active Combat Stats (Can be temporarily boosted by looting)
+        # Active Combat Stats
         self.atk = self.base_atk
         self.def_stat = self.base_def_stat
         
@@ -30,7 +39,6 @@ class Gladiator:
         self.atk_mult = 1.0
         self.def_mult = 1.0
         
-        # Gold is now a high score/bounty mechanic
         self.gold = 10 
         self.is_alive = True
 
@@ -50,11 +58,10 @@ class ArenaGame:
         self.first_blood_victim = None
         self.round_num = 1
         
-        # Initialize gladiators. All AI are just named "Gladiator".
         self.gladiators = [Gladiator("Player", is_player=True)]
         self.player = self.gladiators[0]
         for _ in range(19):
-            self.gladiators.append(Gladiator("Gladiator"))
+            self.gladiators.append(Gladiator("AI")) # Name is overwritten by archetype
             
         if os.name == 'nt':
             os.system('color')
@@ -77,7 +84,8 @@ class ArenaGame:
                     "atk_mult": g.atk_mult,
                     "def_mult": g.def_mult,
                     "gold": g.gold,
-                    "is_alive": g.is_alive
+                    "is_alive": g.is_alive,
+                    "personality": g.personality
                 } for g in self.gladiators
             ]
         }
@@ -97,6 +105,7 @@ class ArenaGame:
         self.gladiators = []
         for g_data in state.get("gladiators", []):
             g = Gladiator(g_data["name"], g_data["is_player"])
+            g.name = g_data["name"] # Override random init
             g.hp = g_data["hp"]
             g.base_atk = g_data["base_atk"]
             g.base_def_stat = g_data["base_def_stat"]
@@ -107,6 +116,7 @@ class ArenaGame:
             g.def_mult = g_data["def_mult"]
             g.gold = g_data["gold"]
             g.is_alive = g_data["is_alive"]
+            g.personality = g_data.get("personality", "Berserker")
             self.gladiators.append(g)
             
         self.player = next((g for g in self.gladiators if g.is_player), self.gladiators[0])
@@ -123,14 +133,12 @@ class ArenaGame:
         return [g for g in self.gladiators if g.is_alive]
 
     def sort_gladiators(self):
-        # Sorts living to the top, dead to the bottom. Player takes priority at the very top.
         self.gladiators.sort(key=lambda g: (g.is_alive, g.is_player), reverse=True)
 
     def get_idx_name(self, g):
-        """Helper function to dynamically get the gladiator's current roster number for the log."""
         if g in self.gladiators:
             idx = self.gladiators.index(g) + 1
-            if g.name == "Gladiator":
+            if not g.is_player:
                 return f"[{idx}]"
             return f"[{idx}] {g.name}"
         return g.name
@@ -141,7 +149,6 @@ class ArenaGame:
         self.first_blood_victim = None
         for g in self.gladiators:
             g.hp = 100
-            # Strip scavenged gear, reset to permanent upgraded stats
             g.atk = g.base_atk
             g.def_stat = g.base_def_stat
             g.is_alive = True
@@ -162,15 +169,22 @@ class ArenaGame:
         print(f"THE ARENA - Current Pot: {self.pot} Gold".center(110))
         print("=" * 110)
         
-        # Dynamic Row Calculation based on shrinking roster
+        def pad_ansi(text, width):
+            visible_text = re.sub(r'\033\[.*?m', '', text)
+            padding_needed = max(0, width - len(visible_text))
+            return text + (" " * padding_needed)
+
         num_glads = len(self.gladiators)
         num_rows = (num_glads + 1) // 2
         
         for i in range(num_rows):
             left_glad = self.gladiators[i]
-            left_str_raw = f"{left_glad.display_stats(i + 1):<75}"
+            left_str_raw = left_glad.display_stats(i + 1)
+            
             if not left_glad.is_alive:
                 left_str_raw = f"{Colors.GRAY}{left_str_raw}{Colors.RESET}"
+                
+            left_str_raw = pad_ansi(left_str_raw, 75)
                 
             right_idx = i + num_rows
             if right_idx < num_glads:
@@ -180,8 +194,7 @@ class ArenaGame:
                     right_str_raw = f"{Colors.GRAY}{right_str_raw}{Colors.RESET}"
                 print(f"{left_str_raw} ||   {right_str_raw}")
             else:
-                # If odd number of gladiators, the last row only has a left column
-                print(f"{left_str_raw} |")
+                print(f"{left_str_raw} ||")
             
         print("=" * 110)
         print("BATTLE LOG".center(110))
@@ -206,7 +219,7 @@ class ArenaGame:
         dec_name = self.get_idx_name(deceased)
         
         if survivor.is_player:
-            self.log_and_render(f"You stand victorious over a fallen {dec_name}!", delay=0)
+            self.log_and_render(f"You stand victorious over a fallen {deceased.name}!", delay=0)
             print(f"1. Take their Weapon (+{atk_boost} Temp Atk)")
             print(f"2. Take their Shield (+{def_boost} Temp Def)")
             print("3. Leave their gear in the dust")
@@ -225,7 +238,6 @@ class ArenaGame:
                     self.log_and_render("You respectfully leave the gear untouched.")
                     break
         else:
-            # AI scavenges silently in the background
             if random.random() > 0.5:
                 survivor.atk += atk_boost
             else:
@@ -263,13 +275,13 @@ class ArenaGame:
                 break
             elif choice == 'S':
                 self.save_game()
-                self.log_and_render(f"{Colors.GREEN}Game saved successfully!{Colors.RESET}", delay=1.0)
+                self.log_and_render(f"{Colors.GREEN}Game saved successfully!{Colors.RESET}", delay=0.15)
             elif choice == 'L':
                 if self.load_game():
-                    self.log_and_render(f"{Colors.GREEN}Game loaded successfully!{Colors.RESET}", delay=1.0)
+                    self.log_and_render(f"{Colors.GREEN}Game loaded successfully!{Colors.RESET}", delay=0.15)
                     return "LOADED"
                 else:
-                    self.log_and_render(f"{Colors.RED}No save file found!{Colors.RESET}", delay=1.0)
+                    self.log_and_render(f"{Colors.RED}No save file found!{Colors.RESET}", delay=0.15)
 
     def player_attack_logic(self, player):
         num_glads = len(self.gladiators)
@@ -294,29 +306,57 @@ class ArenaGame:
                 print("Please enter a valid number.")
 
     def ai_turn(self, ai):
-        action = random.choices(['attack', 'defend', 'gesture'], weights=[60, 20, 20])[0]
+        alive = self.get_alive_gladiators()
+        targets = [g for g in alive if g != ai]
+        
+        if not targets:
+            return
+
+        # Base decision weights
+        weights = {'attack': 60, 'defend': 20, 'gesture': 20}
+        
+        # Modify weights based on personality and current HP
+        if ai.hp < 40 or ai.personality == "Survivor":
+            weights['defend'] += 40
+            weights['attack'] -= 20
+        
+        if ai.personality == "Berserker":
+            weights['attack'] += 30
+            weights['defend'] -= 15
+            weights['gesture'] -= 10
+            
+        # Ensure no negative weights
+        w_vals = [max(1, w) for w in weights.values()]
+        action = random.choices(list(weights.keys()), weights=w_vals)[0]
         
         if action == 'attack':
             ai.stance = "Attack"
             ai.atk_mult = 1.0
             ai.def_mult = 0.5
-            alive = self.get_alive_gladiators()
-            targets = [g for g in alive if g != ai]
-            if targets:
+            
+            # Smart Target Selection based on Personality
+            if ai.personality == "Assassin":
+                target = min(targets, key=lambda t: t.hp)
+            elif ai.personality == "Slayer":
+                target = max(targets, key=lambda t: t.hp)
+            elif ai.personality == "Tactician":
+                target = min(targets, key=lambda t: t.def_stat * t.def_mult)
+            else:
                 target = random.choice(targets)
-                self.execute_attack(ai, target)
+                
+            self.execute_attack(ai, target)
+            
         elif action == 'defend':
             ai.stance = "Defend"
             ai.atk_mult = 0.5
             ai.def_mult = 1.0
-            # AI defends silently
+            
         elif action == 'gesture':
             ai.stance = "Gesture"
             ai.atk_mult = 1.0
             ai.def_mult = 1.0
             cheer = max(1, int(self.pot * 0.01))
             self.pot += cheer
-            # AI gestures silently
 
     def execute_attack(self, attacker, defender):
         att_name = self.get_idx_name(attacker)
@@ -325,17 +365,11 @@ class ArenaGame:
         involves_player = attacker.is_player or defender.is_player
         
         def c_log(msg, delay=0.15):
-            """Helper function that only logs and delays if the player is involved in the combat."""
             if involves_player:
                 self.log_and_render(msg, delay)
         
         c_log(f"{att_name} attacks {def_name}!")
         
-        if defender.is_player:
-            reaction = self.player_reaction(attacker)
-        else:
-            reaction = random.choice(['counter', 'defend'])
-            
         # Base active stats for Attacker
         att_atk = attacker.atk * attacker.atk_mult
         att_def = attacker.def_stat * attacker.def_mult
@@ -343,6 +377,23 @@ class ArenaGame:
         # Base active stats for Defender
         def_base_atk = defender.atk * defender.atk_mult
         def_base_def = defender.def_stat * defender.def_mult
+
+        if defender.is_player:
+            reaction = self.player_reaction(attacker)
+        else:
+            # Smart AI Reactions
+            if defender.hp < 30 or defender.personality == "Survivor":
+                reaction = 'defend'
+            elif defender.personality == "Berserker":
+                reaction = 'counter'
+            elif defender.personality == "Tactician":
+                # Will the incoming attack hurt significantly?
+                if (att_atk - (def_base_def * 0.75)) > 15:
+                    reaction = 'defend' # Brace for impact
+                else:
+                    reaction = 'counter' # Take the small hit and strike back
+            else:
+                reaction = random.choice(['counter', 'defend'])
         
         if reaction == 'counter':
             c_log(f"{def_name} chooses to counterattack!")
@@ -381,7 +432,7 @@ class ArenaGame:
         # Process deaths, stealing gold, and looting
         if not defender.is_alive:
             self.pot += 25
-            c_log(f"{Colors.GREEN}*** {def_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}", delay=1.0)
+            c_log(f"{Colors.GREEN}*** {def_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}", delay=0.15)
             if self.first_blood_victim is None and not defender.is_player:
                 self.first_blood_victim = defender
             if attacker.is_alive:
@@ -393,7 +444,7 @@ class ArenaGame:
                 
         if not attacker.is_alive:
             self.pot += 25
-            c_log(f"{Colors.GREEN}*** {att_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}", delay=1.0)
+            c_log(f"{Colors.GREEN}*** {att_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}", delay=0.15)
             if self.first_blood_victim is None and not attacker.is_player:
                 self.first_blood_victim = attacker
             if defender.is_alive:
@@ -403,7 +454,6 @@ class ArenaGame:
                 c_log(f"{def_name} claims {stolen_gold} gold from {att_name}!", delay=0.5)
                 self.loot_gladiator(defender, attacker)
 
-        # Sort the roster immediately after someone dies to dynamically update the list
         self.sort_gladiators()
 
     def player_reaction(self, attacker):
@@ -442,7 +492,6 @@ class ArenaGame:
                     winner.base_def_stat += 1
                     points -= 1
                     
-            # Display final stat block before continuing
             os.system('cls' if os.name == 'nt' else 'clear')
             print("=" * 60)
             print("PREPARATION COMPLETE".center(60))
@@ -459,7 +508,6 @@ class ArenaGame:
             print("=" * 60)
             print(f"The Champion {winner.name} hones their skills in the shadows...")
             
-            # AI randomly distributes the 4 points
             for _ in range(points):
                 if random.random() > 0.5:
                     winner.base_atk += 1
@@ -473,7 +521,7 @@ class ArenaGame:
         while True:
             self.reset_arena()
             self.round_num = 1
-            self.log_and_render(f"Welcome to the ARENA. {len(self.gladiators)} combatants remain!", delay=2.0)
+            self.log_and_render(f"Welcome to the ARENA. {len(self.gladiators)} combatants remain!", delay=1.0)
             
             while len(self.get_alive_gladiators()) > 1:
                 if not self.player.is_alive:
@@ -484,7 +532,6 @@ class ArenaGame:
                 
                 loaded_from_menu = False
                 
-                # Copy the list for iteration so dynamic sorting doesn't skip turns
                 for gladiator in list(self.get_alive_gladiators()):
                     if not gladiator.is_alive:
                         continue
@@ -497,7 +544,6 @@ class ArenaGame:
                     else:
                         self.ai_turn(gladiator)
                         
-                # If the player loaded a game, we break out of the turn loop and restart the round loop
                 if loaded_from_menu:
                     continue
                     
@@ -522,7 +568,6 @@ class ArenaGame:
                 print(f"{winner.name} receives the Champion's Share: {winner_share} Gold!")
                 print(f"All other gladiators receive a Consolation Share: {loser_share} Gold.")
                 
-                # Winner takes 50%, losers split the rest
                 winner.gold += winner_share
                 for g in self.gladiators:
                     if g != winner:
