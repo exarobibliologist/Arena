@@ -513,54 +513,46 @@ class ArenaGame:
             elif choice == '2':
                 return 'defend'
 
-    def preparation_phase(self, winner: Gladiator) -> None:
-        points = 4
-        
-        if winner.is_player:
+    def preparation_phase(self, gladiator: Gladiator, points: int) -> None:
+        """Handles stat upgrades between rounds for a given gladiator."""
+        if gladiator.is_player:
             while points > 0:
                 self._clear_screen()
                 print("=" * 60)
-                print("PREPARATION PHASE".center(60))
+                print(f"PREPARATION PHASE".center(60))
                 print("=" * 60)
-                print(f"You are the Champion! You have {points} stat points to spend.")
+                print(f"You have {points} stat points to spend.")
                 print("-" * 60)
-                print(f"1. Upgrade Attack  (Current Base: {winner.base_atk})")
-                print(f"2. Upgrade Defense (Current Base: {winner.base_def_stat})")
+                print(f"1. Upgrade Attack  (Current Base: {gladiator.base_atk})")
+                print(f"2. Upgrade Defense (Current Base: {gladiator.base_def_stat})")
                 print("=" * 60)
                 
                 choice = input("Select a stat to upgrade (1-2): ").strip()
                 if choice == '1':
-                    winner.base_atk += 1
+                    gladiator.base_atk += 1
                     points -= 1
                 elif choice == '2':
-                    winner.base_def_stat += 1
+                    gladiator.base_def_stat += 1
                     points -= 1
                     
             self._clear_screen()
             print("=" * 60)
             print("PREPARATION COMPLETE".center(60))
             print("=" * 60)
-            print(f"Final Base Attack:  {winner.base_atk}")
-            print(f"Final Base Defense: {winner.base_def_stat}")
+            print(f"Final Base Attack:  {gladiator.base_atk}")
+            print(f"Final Base Defense: {gladiator.base_def_stat}")
             print("=" * 60)
             input("\nPress Enter to return to the Arena...")
             
         else:
-            self._clear_screen()
-            print("=" * 60)
-            print("PREPARATION PHASE".center(60))
-            print("=" * 60)
-            print(f"The Champion {winner.name} hones their skills in the shadows...")
+            # AI gladiators level up silently in the background
             
             for _ in range(points):
                 if random.random() > 0.5:
-                    winner.base_atk += 1
+                    gladiator.base_atk += 1
                 else:
-                    winner.base_def_stat += 1
+                    gladiator.base_def_stat += 1
                     
-            print("=" * 60)
-            input("\nPress Enter to return to the Arena...")
-
     def play(self) -> None:
         """Main game loop handler."""
         self.launch_log_window()
@@ -641,8 +633,12 @@ class ArenaGame:
                 print(f"\nThanks for playing Arena! Your Final Score (Gold): {self.player.gold}")
                 break
             else:
-                if winner:
-                    self.preparation_phase(winner)
+                self._clear_screen()
+                print("The combatants retreat to the shadows to hone their skills...\n")
+                time.sleep(1.5)
+                for g in self.gladiators:
+                    pts = 8 if g == winner else 4
+                    self.preparation_phase(g, pts)
 
 def run_log_viewer() -> None:
     """Standalone loop to tail the battle log file."""
