@@ -21,7 +21,7 @@ class Gladiator:
             self.personality = "Player"
             self.name = name
         else:
-            self.personality = random.choice(["Assassin", "Slayer", "Tactician", "Berserker", "Survivor"])
+            self.personality = random.choice(["Assassin", "Slayer", "Tactician", "Berserker", "Survivor", "GoldDigger"])
             self.name = self.personality
 
         self.hp = 100
@@ -157,7 +157,7 @@ class ArenaGame:
             g.def_mult = 1.0
         self.sort_gladiators()
 
-    def log_and_render(self, msg, delay=0.15):
+    def log_and_render(self, msg, delay=0):
         if msg:
             self.messages.append(msg)
             if len(self.messages) > 15:
@@ -275,13 +275,13 @@ class ArenaGame:
                 break
             elif choice == 'S':
                 self.save_game()
-                self.log_and_render(f"{Colors.GREEN}Game saved successfully!{Colors.RESET}", delay=0.15)
+                self.log_and_render(f"{Colors.GREEN}Game saved successfully!{Colors.RESET}", delay=0)
             elif choice == 'L':
                 if self.load_game():
-                    self.log_and_render(f"{Colors.GREEN}Game loaded successfully!{Colors.RESET}", delay=0.15)
+                    self.log_and_render(f"{Colors.GREEN}Game loaded successfully!{Colors.RESET}", delay=0)
                     return "LOADED"
                 else:
-                    self.log_and_render(f"{Colors.RED}No save file found!{Colors.RESET}", delay=0.15)
+                    self.log_and_render(f"{Colors.RED}No save file found!{Colors.RESET}", delay=0)
 
     def player_attack_logic(self, player):
         num_glads = len(self.gladiators)
@@ -341,6 +341,10 @@ class ArenaGame:
                 target = max(targets, key=lambda t: t.hp)
             elif ai.personality == "Tactician":
                 target = min(targets, key=lambda t: t.def_stat * t.def_mult)
+            elif ai.personality == "GoldDigger":
+                # Targets 1 of the 5 wealthiest gladiators
+                top_targets = sorted(targets, key=lambda t: t.gold, reverse=True)[:5]
+                target = random.choice(top_targets)
             else:
                 target = random.choice(targets)
                 
@@ -364,7 +368,7 @@ class ArenaGame:
         
         involves_player = attacker.is_player or defender.is_player
         
-        def c_log(msg, delay=0.15):
+        def c_log(msg, delay=0):
             if involves_player:
                 self.log_and_render(msg, delay)
         
@@ -432,26 +436,26 @@ class ArenaGame:
         # Process deaths, stealing gold, and looting
         if not defender.is_alive:
             self.pot += 25
-            c_log(f"{Colors.GREEN}*** {def_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}", delay=0.15)
+            c_log(f"{Colors.GREEN}*** {def_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}", delay=0)
             if self.first_blood_victim is None and not defender.is_player:
                 self.first_blood_victim = defender
             if attacker.is_alive:
                 stolen_gold = defender.gold // 2
                 attacker.gold += stolen_gold
                 defender.gold -= stolen_gold
-                c_log(f"{att_name} claims {stolen_gold} gold from {def_name}!", delay=0.5)
+                c_log(f"{att_name} claims {stolen_gold} gold from {def_name}!", delay=0)
                 self.loot_gladiator(attacker, defender)
                 
         if not attacker.is_alive:
             self.pot += 25
-            c_log(f"{Colors.GREEN}*** {att_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}", delay=0.15)
+            c_log(f"{Colors.GREEN}*** {att_name} HAS FALLEN! The crowd cheers (+25 Pot) ***{Colors.RESET}", delay=0)
             if self.first_blood_victim is None and not attacker.is_player:
                 self.first_blood_victim = attacker
             if defender.is_alive:
                 stolen_gold = attacker.gold // 2
                 defender.gold += stolen_gold
                 attacker.gold -= stolen_gold
-                c_log(f"{def_name} claims {stolen_gold} gold from {att_name}!", delay=0.5)
+                c_log(f"{def_name} claims {stolen_gold} gold from {att_name}!", delay=0)
                 self.loot_gladiator(defender, attacker)
 
         self.sort_gladiators()
@@ -521,14 +525,17 @@ class ArenaGame:
         while True:
             self.reset_arena()
             self.round_num = 1
-            self.log_and_render(f"Welcome to the ARENA. {len(self.gladiators)} combatants remain!", delay=1.0)
+            self.log_and_render(f"Welcome to the ARENA. {len(self.gladiators)} combatants remain!", delay=0)
+            
+            player_fallen_msg_shown = False
             
             while len(self.get_alive_gladiators()) > 1:
-                if not self.player.is_alive:
-                    self.log_and_render("You have fallen in the Arena...", delay=0)
-                    break
+                if not self.player.is_alive and not player_fallen_msg_shown:
+                    self.log_and_render(f"{Colors.RED}You have fallen! The remaining gladiators finish the match...{Colors.RESET}", delay=5.0)
+                    player_fallen_msg_shown = True
                     
-                self.log_and_render(f"--- ROUND {self.round_num} BEGINS ---")
+                if self.player.is_alive:
+                    self.log_and_render(f"--- ROUND {self.round_num} BEGINS ---")
                 
                 loaded_from_menu = False
                 
@@ -588,7 +595,7 @@ class ArenaGame:
                 if q_c in ['Q', 'C']:
                     break
             
-            if q_c == 'Q' or not self.player.is_alive:
+            if q_c == 'Q':
                 print(f"\nThanks for playing Arena! Your Final Score (Gold): {self.player.gold}")
                 break
             else:
