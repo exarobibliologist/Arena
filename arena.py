@@ -3,6 +3,8 @@ import time
 import os
 import json
 import re
+from typing import List, Optional, Dict, Any
+from enum import Enum
 
 class Colors:
     RED = '\033[31m'
@@ -12,8 +14,16 @@ class Colors:
     GRAY = '\033[38;5;239m'
     RESET = '\033[0m'
 
+class Stance(Enum):
+    NEUTRAL = "Neutral"
+    ATTACK = "Attack"
+    DEFEND = "Defend"
+    GESTURE = "Gesture"
+
 class Gladiator:
-    def __init__(self, name, is_player=False):
+    """Represents a combatant in the arena."""
+    
+    def __init__(self, name: str, is_player: bool = False) -> None:
         self.is_player = is_player
         
         # AI Personality Profile dictates their name
@@ -24,49 +34,59 @@ class Gladiator:
             self.personality = random.choice(["Assassin", "Slayer", "Tactician", "Berserker", "Survivor", "GoldDigger"])
             self.name = self.personality
 
-        self.hp = 100
+        self.hp: int = 100
         
         # Permanent Base Stats
-        self.base_atk = random.randint(15, 20)
-        self.base_def_stat = random.randint(15, 20)
+        self.base_atk: int = random.randint(15, 20)
+        self.base_def_stat: int = random.randint(15, 20)
         
         # Active Combat Stats
-        self.atk = self.base_atk
-        self.def_stat = self.base_def_stat
+        self.atk: int = self.base_atk
+        self.def_stat: int = self.base_def_stat
         
         # Stance Multipliers
-        self.stance = "Neutral"
-        self.atk_mult = 1.0
-        self.def_mult = 1.0
+        self.stance: Stance = Stance.NEUTRAL
+        self.atk_mult: float = 1.0
+        self.def_mult: float = 1.0
         
-        self.gold = 10 
-        self.is_alive = True
+        self.gold: int = 10 
+        self.is_alive: bool = True
 
-    def display_stats(self, index):
+    def display_stats(self, index: int) -> str:
+        """Returns a formatted string of the gladiator's current combat statistics."""
         marker = ""
         if self.is_alive:
-            if self.stance == "Attack": marker = f"{Colors.RED} (A){Colors.RESET}"
-            elif self.stance == "Defend": marker = f"{Colors.GREEN} (D){Colors.RESET}"
-            elif self.stance == "Gesture": marker = f"{Colors.YELLOW} (G){Colors.RESET}"
+            if self.stance == Stance.ATTACK: marker = f"{Colors.RED} (A){Colors.RESET}"
+            elif self.stance == Stance.DEFEND: marker = f"{Colors.GREEN} (D){Colors.RESET}"
+            elif self.stance == Stance.GESTURE: marker = f"{Colors.YELLOW} (G){Colors.RESET}"
             
         return f"[{index:2}] {self.name:12}: HP {self.hp:3} | Atk {self.atk:2} | Def {self.def_stat:2} | $ {self.gold:3} |{marker}"
 
+
 class ArenaGame:
-    def __init__(self):
-        self.pot = 10
-        self.messages = []
-        self.first_blood_victim = None
-        self.round_num = 1
+    """Main controller for the Arena combat simulation."""
+    
+    def __init__(self) -> None:
+        self.pot: int = 10
+        self.messages: List[str] = []
+        self.first_blood_victim: Optional[Gladiator] = None
+        self.round_num: int = 1
         
-        self.gladiators = [Gladiator("Player", is_player=True)]
-        self.player = self.gladiators[0]
+        self.gladiators: List[Gladiator] = [Gladiator("Player", is_player=True)]
+        self.player: Gladiator = self.gladiators[0]
+        
         for _ in range(19):
             self.gladiators.append(Gladiator("AI")) # Name is overwritten by archetype
             
         if os.name == 'nt':
             os.system('color')
 
-    def save_game(self, filename="arena_save.json"):
+    def _clear_screen(self) -> None:
+        """Helper method to clear the terminal screen."""
+        os.system('cls' if os.name == 'nt' else 'clear')
+
+    def save_game(self, filename: str = "arena_save.json") -> None:
+        """Serializes the current game state to a JSON file."""
         state = {
             "pot": self.pot,
             "round_num": self.round_num,
@@ -80,7 +100,7 @@ class ArenaGame:
                     "base_def_stat": g.base_def_stat,
                     "atk": g.atk,
                     "def_stat": g.def_stat,
-                    "stance": g.stance,
+                    "stance": g.stance.value,
                     "atk_mult": g.atk_mult,
                     "def_mult": g.def_mult,
                     "gold": g.gold,
@@ -92,7 +112,8 @@ class ArenaGame:
         with open(filename, "w") as f:
             json.dump(state, f)
 
-    def load_game(self, filename="arena_save.json"):
+    def load_game(self, filename: str = "arena_save.json") -> bool:
+        """Deserializes game state from a JSON file. Returns True if successful."""
         if not os.path.exists(filename):
             return False
             
@@ -111,7 +132,7 @@ class ArenaGame:
             g.base_def_stat = g_data["base_def_stat"]
             g.atk = g_data["atk"]
             g.def_stat = g_data["def_stat"]
-            g.stance = g_data["stance"]
+            g.stance = Stance(g_data["stance"])
             g.atk_mult = g_data["atk_mult"]
             g.def_mult = g_data["def_mult"]
             g.gold = g_data["gold"]
@@ -129,13 +150,15 @@ class ArenaGame:
             
         return True
 
-    def get_alive_gladiators(self):
+    def get_alive_gladiators(self) -> List[Gladiator]:
+        """Returns a list of all currently living gladiators."""
         return [g for g in self.gladiators if g.is_alive]
 
-    def sort_gladiators(self):
+    def sort_gladiators(self) -> None:
         self.gladiators.sort(key=lambda g: (g.is_alive, g.is_player), reverse=True)
 
-    def get_idx_name(self, g):
+    def get_idx_name(self, g: Gladiator) -> str:
+        """Retrieves formatted display name with index for rendering logs."""
         if g in self.gladiators:
             idx = self.gladiators.index(g) + 1
             if not g.is_player:
@@ -143,7 +166,8 @@ class ArenaGame:
             return f"[{idx}] {g.name}"
         return g.name
 
-    def reset_arena(self):
+    def reset_arena(self) -> None:
+        """Resets arena state for a new round of combat."""
         self.pot = 10
         self.messages = []
         self.first_blood_victim = None
@@ -152,24 +176,25 @@ class ArenaGame:
             g.atk = g.base_atk
             g.def_stat = g.base_def_stat
             g.is_alive = True
-            g.stance = "Neutral"
+            g.stance = Stance.NEUTRAL
             g.atk_mult = 1.0
             g.def_mult = 1.0
         self.sort_gladiators()
 
-    def log_and_render(self, msg, delay=0):
+    def log_and_render(self, msg: Optional[str], delay: float = 0) -> None:
+        """Logs a message to the battle log and renders the UI frame."""
         if msg:
             self.messages.append(msg)
             if len(self.messages) > 15:
                 self.messages.pop(0)
                 
-        os.system('cls' if os.name == 'nt' else 'clear')
+        self._clear_screen()
         
         print("=" * 110)
         print(f"THE ARENA - Current Pot: {self.pot} Gold".center(110))
         print("=" * 110)
         
-        def pad_ansi(text, width):
+        def pad_ansi(text: str, width: int) -> str:
             visible_text = re.sub(r'\033\[.*?m', '', text)
             padding_needed = max(0, width - len(visible_text))
             return text + (" " * padding_needed)
@@ -211,12 +236,10 @@ class ArenaGame:
         if delay > 0:
             time.sleep(delay)
 
-    def loot_gladiator(self, survivor, deceased):
+    def loot_gladiator(self, survivor: Gladiator, deceased: Gladiator) -> None:
+        """Processes gear upgrades when one gladiator defeats another."""
         atk_boost = max(1, deceased.atk // 4)
         def_boost = max(1, deceased.def_stat // 4)
-        
-        surv_name = self.get_idx_name(survivor)
-        dec_name = self.get_idx_name(deceased)
         
         if survivor.is_player:
             self.log_and_render(f"You stand victorious over a fallen {deceased.name}!", delay=0)
@@ -243,7 +266,8 @@ class ArenaGame:
             else:
                 survivor.def_stat += def_boost
 
-    def player_turn(self, player):
+    def player_turn(self, player: Gladiator) -> Optional[str]:
+        """Handles input and logic for the player's turn."""
         while True:
             self.log_and_render(f"{Colors.MAGENTA}It is your turn!{Colors.RESET}", delay=0)
             print("1. Attack (100% Atk / 50% Def until next turn)")
@@ -254,19 +278,19 @@ class ArenaGame:
             choice = input("Choose action (1-3, S, L): ").strip().upper()
             
             if choice == '1':
-                player.stance = "Attack"
+                player.stance = Stance.ATTACK
                 player.atk_mult = 1.0
                 player.def_mult = 0.5
                 self.player_attack_logic(player)
                 break
             elif choice == '2':
-                player.stance = "Defend"
+                player.stance = Stance.DEFEND
                 player.atk_mult = 0.5
                 player.def_mult = 1.0
                 self.log_and_render("You take a defensive stance!")
                 break
             elif choice == '3':
-                player.stance = "Gesture"
+                player.stance = Stance.GESTURE
                 player.atk_mult = 1.0
                 player.def_mult = 1.0
                 cheer = max(1, int(self.pot * 0.01))
@@ -282,8 +306,9 @@ class ArenaGame:
                     return "LOADED"
                 else:
                     self.log_and_render(f"{Colors.RED}No save file found!{Colors.RESET}", delay=0)
+        return None
 
-    def player_attack_logic(self, player):
+    def player_attack_logic(self, player: Gladiator) -> None:
         num_glads = len(self.gladiators)
         while True:
             try:
@@ -305,7 +330,7 @@ class ArenaGame:
             except ValueError:
                 print("Please enter a valid number.")
 
-    def ai_turn(self, ai):
+    def ai_turn(self, ai: Gladiator) -> None:
         alive = self.get_alive_gladiators()
         targets = [g for g in alive if g != ai]
         
@@ -330,7 +355,7 @@ class ArenaGame:
         action = random.choices(list(weights.keys()), weights=w_vals)[0]
         
         if action == 'attack':
-            ai.stance = "Attack"
+            ai.stance = Stance.ATTACK
             ai.atk_mult = 1.0
             ai.def_mult = 0.5
             
@@ -351,24 +376,33 @@ class ArenaGame:
             self.execute_attack(ai, target)
             
         elif action == 'defend':
-            ai.stance = "Defend"
+            ai.stance = Stance.DEFEND
             ai.atk_mult = 0.5
             ai.def_mult = 1.0
             
         elif action == 'gesture':
-            ai.stance = "Gesture"
+            ai.stance = Stance.GESTURE
             ai.atk_mult = 1.0
             ai.def_mult = 1.0
             cheer = max(1, int(self.pot * 0.01))
             self.pot += cheer
 
-    def execute_attack(self, attacker, defender):
+    def _apply_damage(self, target: Gladiator, dmg_calc: float) -> int:
+        """Helper method to encapsulate damage application and HP floor bounding."""
+        dmg = max(0, int(dmg_calc))
+        target.hp = max(0, target.hp - dmg)
+        if target.hp == 0:
+            target.is_alive = False
+        return dmg
+
+    def execute_attack(self, attacker: Gladiator, defender: Gladiator) -> None:
+        """Resolves an attack action between two combatants."""
         att_name = self.get_idx_name(attacker)
         def_name = self.get_idx_name(defender)
         
         involves_player = attacker.is_player or defender.is_player
         
-        def c_log(msg, delay=0):
+        def c_log(msg: str, delay: float = 0) -> None:
             if involves_player:
                 self.log_and_render(msg, delay)
         
@@ -409,10 +443,7 @@ class ArenaGame:
             final_def_atk = def_base_atk * 0.75
             
         # Step 1: Attacker hits Defender
-        dmg_in = max(0, int(att_atk - final_def_def))
-        defender.hp = max(0, defender.hp - dmg_in)
-        if defender.hp == 0:
-            defender.is_alive = False
+        dmg_in = self._apply_damage(defender, att_atk - final_def_def)
             
         c_log(f"{att_name} hits for {dmg_in} damage!")
         
@@ -422,10 +453,7 @@ class ArenaGame:
             
         # Step 2: Defender strikes back (if they survive)
         if defender.is_alive:
-            dmg_out = max(0, int(final_def_atk - att_def))
-            attacker.hp = max(0, attacker.hp - dmg_out)
-            if attacker.hp == 0:
-                attacker.is_alive = False
+            dmg_out = self._apply_damage(attacker, final_def_atk - att_def)
                 
             c_log(f"{def_name} hits back for {dmg_out} damage!")
             
@@ -460,7 +488,7 @@ class ArenaGame:
 
         self.sort_gladiators()
 
-    def player_reaction(self, attacker):
+    def player_reaction(self, attacker: Gladiator) -> str:
         att_name = self.get_idx_name(attacker)
         self.log_and_render(f"{Colors.RED}!!! An enemy {att_name} is attacking you! !!!{Colors.RESET}", delay=0)
         print("1. Counterattack (Take damage at -25% Def, hit back +50% Atk)")
@@ -473,12 +501,12 @@ class ArenaGame:
             elif choice == '2':
                 return 'defend'
 
-    def preparation_phase(self, winner):
+    def preparation_phase(self, winner: Gladiator) -> None:
         points = 4
         
         if winner.is_player:
             while points > 0:
-                os.system('cls' if os.name == 'nt' else 'clear')
+                self._clear_screen()
                 print("=" * 60)
                 print("PREPARATION PHASE".center(60))
                 print("=" * 60)
@@ -496,7 +524,7 @@ class ArenaGame:
                     winner.base_def_stat += 1
                     points -= 1
                     
-            os.system('cls' if os.name == 'nt' else 'clear')
+            self._clear_screen()
             print("=" * 60)
             print("PREPARATION COMPLETE".center(60))
             print("=" * 60)
@@ -506,7 +534,7 @@ class ArenaGame:
             input("\nPress Enter to return to the Arena...")
             
         else:
-            os.system('cls' if os.name == 'nt' else 'clear')
+            self._clear_screen()
             print("=" * 60)
             print("PREPARATION PHASE".center(60))
             print("=" * 60)
@@ -521,7 +549,8 @@ class ArenaGame:
             print("=" * 60)
             input("\nPress Enter to return to the Arena...")
 
-    def play(self):
+    def play(self) -> None:
+        """Main game loop handler."""
         while True:
             self.reset_arena()
             self.round_num = 1
@@ -557,7 +586,7 @@ class ArenaGame:
                 self.round_num += 1
                 
             alive = self.get_alive_gladiators()
-            os.system('cls' if os.name == 'nt' else 'clear')
+            self._clear_screen()
             print("=" * 60)
             
             winner = None
@@ -601,6 +630,7 @@ class ArenaGame:
             else:
                 if winner:
                     self.preparation_phase(winner)
+
 
 if __name__ == "__main__":
     game = ArenaGame()
