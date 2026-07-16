@@ -270,21 +270,21 @@ class ArenaGame:
             
             if choice == '1':
                 player.stance = Stance.ATTACK
-                player.atk_mult = 1.0
+                player.atk_mult = 1.5
                 player.def_mult = 0.5
                 self.player_attack_logic(player)
                 break
             elif choice == '2':
                 player.stance = Stance.DEFEND
                 player.atk_mult = 0.5
-                player.def_mult = 1.0
+                player.def_mult = 1.5
                 self.log_event("Player takes a defensive stance!")
                 break
             elif choice == '3':
                 player.stance = Stance.GESTURE
-                player.atk_mult = 1.0
-                player.def_mult = 1.0
-                cheer = max(1, int(self.pot * 0.01))
+                player.atk_mult = 0.5
+                player.def_mult = 0.5
+                cheer = max(1, int(self.pot * 0.05))
                 self.pot += cheer
                 self.log_event(f"Player pumps up the crowd! The pot increases by {cheer}!")
                 break
@@ -339,7 +339,7 @@ class ArenaGame:
         
         if action == 'attack':
             ai.stance = Stance.ATTACK
-            ai.atk_mult = 1.0
+            ai.atk_mult = 1.5
             ai.def_mult = 0.5
             
             if ai.personality == "Assassin":
@@ -359,13 +359,13 @@ class ArenaGame:
         elif action == 'defend':
             ai.stance = Stance.DEFEND
             ai.atk_mult = 0.5
-            ai.def_mult = 1.0
+            ai.def_mult = 1.5
             
         elif action == 'gesture':
             ai.stance = Stance.GESTURE
-            ai.atk_mult = 1.0
-            ai.def_mult = 1.0
-            cheer = max(1, int(self.pot * 0.01))
+            ai.atk_mult = 0.5
+            ai.def_mult = 0.5
+            cheer = max(1, int(self.pot * 0.05))
             self.pot += cheer
 
     def _apply_damage(self, target: Gladiator, dmg_calc: float) -> int:
@@ -466,11 +466,11 @@ class ArenaGame:
         delta_def = max(0, gladiator.def_stat - gladiator.base_def_stat)
         
         if is_winner:
-            atk_gain = max(3, int(delta_atk ** (1/3)))
-            def_gain = max(3, int(delta_def ** (1/3)))
+            atk_gain = max(3, int(delta_atk ** (1/2)))
+            def_gain = max(3, int(delta_def ** (1/2)))
         else:
-            atk_gain = max(1, int(delta_atk ** (1/4)))
-            def_gain = max(1, int(delta_def ** (1/4)))
+            atk_gain = max(1, int(delta_atk ** (1/2)))
+            def_gain = max(1, int(delta_def ** (1/2)))
             
         gladiator.base_atk += atk_gain
         gladiator.base_def_stat += def_gain
@@ -711,9 +711,9 @@ class ArenaApp(tk.Tk):
 
         if ptype == "MAIN_ACTION":
             tk.Label(self.controls_frame, text="It is your turn! Choose action:", fg='#FF55FF', bg='#1a1a1a', font=('Arial', 14, 'bold')).pack(pady=5)
-            self._create_btn("[1] Attack (100% Atk / 50% Def)", lambda: self._submit_input('1'), color='#662222')
-            self._create_btn("[2] Defend (100% Def / 50% Atk)", lambda: self._submit_input('2'), color='#226622')
-            self._create_btn("[3] Gesture to Crowd (+1% Pot)", lambda: self._submit_input('3'), color='#666622')
+            self._create_btn("[1] Attack (150% Atk / 50% Def)", lambda: self._submit_input('1'), color='#662222')
+            self._create_btn("[2] Defend (50% Atk / 150% Def)", lambda: self._submit_input('2'), color='#226622')
+            self._create_btn("[3] Gesture to Crowd (50% Atk / 50% Def / +5% Pot)", lambda: self._submit_input('3'), color='#666622')
             
             save_frame = tk.Frame(self.controls_frame, bg='#1a1a1a')
             save_frame.pack(fill='x', pady=5, padx=20)
