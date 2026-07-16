@@ -466,11 +466,11 @@ class ArenaGame:
         delta_def = max(0, gladiator.def_stat - gladiator.base_def_stat)
         
         if is_winner:
-            atk_gain = max(2, int(delta_atk ** (1/3)))
-            def_gain = max(2, int(delta_atk ** (1/3)))
+            atk_gain = max(3, int(delta_atk ** (1/3)))
+            def_gain = max(3, int(delta_def ** (1/3)))
         else:
-            atk_gain = max(1, int(delta_atk ** (1/3)))
-            def_gain = max(1, int(delta_def ** (1/3)))
+            atk_gain = max(1, int(delta_atk ** (1/4)))
+            def_gain = max(1, int(delta_def ** (1/4)))
             
         gladiator.base_atk += atk_gain
         gladiator.base_def_stat += def_gain
