@@ -111,6 +111,7 @@ class ArenaGame:
 
     def save_game(self, filename: str = "arena_save.json") -> None:
         state = {
+            "timestamp": time.time(),
             "pot": self.pot,
             "round_num": self.round_num,
             "first_blood_idx": self.gladiators.index(self.first_blood_victim) if self.first_blood_victim in self.gladiators else -1,
@@ -169,6 +170,20 @@ class ArenaGame:
             self.first_blood_victim = self.gladiators[fb_idx]
         else:
             self.first_blood_victim = None
+            
+        # --- IDLE TRAINING CALCULATION ---
+        if "timestamp" in state:
+            elapsed_time = max(0, time.time() - state["timestamp"])
+            atk_gain = max(1, int(elapsed_time ** (1/6)))
+            def_gain = max(1, int(elapsed_time ** (1/6)))
+            
+            self.player.atk += atk_gain
+            self.player.def_stat += def_gain
+            
+            self.idle_report_log = f"Training complete! {int(elapsed_time)}s elapsed. Gained +{atk_gain} Temp Atk and +{def_gain} Temp Def!"
+            self.idle_report_ui = f"Training complete! {int(elapsed_time)} seconds elapsed.\n\nGained +{atk_gain} Temp Attack\nGained +{def_gain} Temp Defense"
+        else:
+            self.idle_report_log = None
             
         return True
 
@@ -288,12 +303,16 @@ class ArenaGame:
                 self.pot += cheer
                 self.log_event(f"Player pumps up the crowd! The pot increases by {cheer}!")
                 break
-            elif choice == 'S':
+            elif choice == 'T':
                 self.save_game()
-                self.log_event(f"{Colors.YELLOW}Game saved successfully.{Colors.RESET}")
+                self.log_event(f"{Colors.YELLOW}Player begins Training... Game saved successfully.{Colors.RESET}")
             elif choice == 'L':
                 if self.load_game():
                     self.log_event(f"{Colors.YELLOW}Game loaded successfully.{Colors.RESET}")
+                    # Display the idle gains if the loaded file has a timestamp
+                    if hasattr(self, 'idle_report_log') and self.idle_report_log:
+                        self.log_event(f"{Colors.GREEN}{self.idle_report_log}{Colors.RESET}")
+                        self.gui_input("MESSAGE", self.idle_report_ui)
                     return "LOADED"
                 else:
                     self.log_event(f"{Colors.RED}No save file found!{Colors.RESET}")
@@ -717,11 +736,11 @@ class ArenaApp(tk.Tk):
             
             save_frame = tk.Frame(self.controls_frame, bg='#1a1a1a')
             save_frame.pack(fill='x', pady=5, padx=20)
-            tk.Button(save_frame, text="[S]ave Game", command=lambda: self._submit_input('S'), bg='#222266', fg='white').pack(side='left', expand=True, fill='x', padx=2)
+            tk.Button(save_frame, text="[T]rain (Save)", command=lambda: self._submit_input('T'), bg='#222266', fg='white').pack(side='left', expand=True, fill='x', padx=2)
             tk.Button(save_frame, text="[L]oad Game", command=lambda: self._submit_input('L'), bg='#222266', fg='white').pack(side='left', expand=True, fill='x', padx=2)
             
-            # Map standard inputs
-            self.current_keybinds = {'1': '1', '2': '2', '3': '3', 'S': 'S', 'L': 'L'}
+            # Map standard inputs to 'T' instead of 'S'
+            self.current_keybinds = {'1': '1', '2': '2', '3': '3', 'T': 'T', 'L': 'L'}
 
         elif ptype == "TARGET_SELECT":
             tk.Label(self.controls_frame, text="Select target to attack:", fg='white', bg='#1a1a1a', font=('Arial', 12)).pack(pady=5)
@@ -731,7 +750,7 @@ class ArenaApp(tk.Tk):
             
             combo = ttk.Combobox(self.controls_frame, textvariable=target_var, values=target_names, state="readonly", font=('Arial', 12))
             combo.pack(fill='x', pady=10, padx=20)
-            combo.focus_set() # Puts your keyboard cursor directly into the combo box
+            combo.focus_set() 
             
             def on_confirm():
                 selection = target_var.get()
@@ -740,7 +759,6 @@ class ArenaApp(tk.Tk):
                     self._submit_input(idx)
                     
             self._create_btn("Confirm Attack [Enter]", on_confirm, color='#882222')
-            # Only map Enter here so you can still type numbers into the Combobox search freely
             self.current_keybinds["ENTER"] = on_confirm
 
         elif ptype == "REACTION":
