@@ -95,7 +95,7 @@ class ArenaGame:
         self.gladiators: List[Gladiator] = [Gladiator("Player", is_player=True)]
         self.player: Gladiator = self.gladiators[0]
         
-        for _ in range(19):
+        for _ in range(39):
             self.gladiators.append(Gladiator("AI")) 
             
         # Retain text-file logging as an artifact backup
@@ -437,6 +437,12 @@ class ArenaGame:
             self.pot += 2
             self.log_event(f"{Colors.GREEN}FLAWLESS DEFENSE! The crowd throws 2 gold into the pot!{Colors.RESET}")
             
+            # --- NEW: Perfect Defense Heal ---
+            if defender.stance == Stance.DEFEND:
+                defender.hp = min(100, defender.hp + 5)
+                self.log_event(f"{Colors.GREEN}Stalwart Defense! {def_name} regains 5 HP!{Colors.RESET}")
+            # ---------------------------------
+            
         if defender.is_alive:
             dmg_out = self._apply_damage(attacker, final_def_atk - att_def)
             self.log_event(f"{def_name} hits back for {dmg_out} damage!", delay=0.1)
@@ -533,7 +539,14 @@ class ArenaGame:
                             break
                     else:
                         self.ai_turn(gladiator)
-                        
+                
+                    # --- NEW: Passive Defense Regen ---
+                    # At the end of EVERY gladiator's action, anyone in Defend stance heals 1 HP
+                    for g in self.get_alive_gladiators():
+                        if g.stance == Stance.DEFEND:
+                            g.hp = min(100, g.hp + 1)
+                    # ----------------------------------
+                    
                 if loaded_from_menu:
                     continue
                     
@@ -569,6 +582,20 @@ class ArenaGame:
             else:
                 lines.append("NO COMBATANTS SURVIVED. THE ARENA CLAIMS ALL.".center(80))
                 lines.append("=" * 80)
+                
+            if len(self.gladiators) <= 1:
+                lines.append("=" * 80)
+                if self.player in self.gladiators:
+                    lines.append("YOU HAVE CONQUERED THE ARENA! NO CHALLENGERS REMAIN!".center(80))
+                else:
+                    lines.append("THE TOURNAMENT HAS ENDED.".center(80))
+                lines.append("=" * 80)
+                
+                # Render the final screen and trigger the exit prompt
+                self.ui_queue.put(('RENDER', "\n".join(lines)))
+                self.log_event(f"\nTournament Complete! Your Final Score (Gold): {self.player.gold}")
+                self.gui_input("EXIT", None)
+                break
             
             self.ui_queue.put(('RENDER', "\n".join(lines)))
             
